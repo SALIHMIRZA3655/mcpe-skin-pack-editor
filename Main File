@@ -1,0 +1,715 @@
+import json
+import os
+import shutil
+import tempfile
+import zipfile
+import uuid
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk, simpledialog
+import locale
+import webbrowser
+
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    DND_AVAILABLE = True
+except ImportError:
+    DND_AVAILABLE = False
+
+try:
+    import rarfile
+    RAR_AVAILABLE = True
+except ImportError:
+    RAR_AVAILABLE = False
+
+if RAR_AVAILABLE:
+    _KNOWN_UNRAR_PATHS = [
+        r"C:\Program Files\UnRAR.exe",
+        r"C:\Program Files (x86)\UnRAR.exe",
+        r"C:\Program Files\WinRAR\UnRAR.exe",
+        r"C:\Program Files (x86)\WinRAR\UnRAR.exe",
+        r"C:\Program Files\WinRAR\Rar.exe",
+        r"C:\Program Files (x86)\WinRAR\Rar.exe",
+        r"C:\Program Files\UnRAR\UnRAR.exe",
+        r"C:\Program Files (x86)\UnRAR\UnRAR.exe",
+        r"C:\UnRAR\UnRAR.exe",
+        os.path.expandvars(r"%USERPROFILE%\Downloads\UnRAR.exe"),
+        os.path.expandvars(r"%USERPROFILE%\Desktop\UnRAR.exe"),
+    ]
+    for _p in _KNOWN_UNRAR_PATHS:
+        if os.path.isfile(_p):
+            rarfile.UNRAR_TOOL = _p
+            break
+
+POSSIBLE_COM_MOJANG_PATHS = [
+    r"%LOCALAPPDATA%\Packages\Microsoft.MinecraftUWP_8wekyb3d8bbwe\LocalState\games\com.mojang",
+    r"%LOCALAPPDATA%\Packages\Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe\LocalState\games\com.mojang",
+]
+
+LANGUAGES = {
+    "tr": {
+        "title": "🎨 MCPE Skin Pack Editörü / Yükleyicisi",
+        "no_pack": "📁 Henüz paket seçilmedi",
+        "drag_hint": " (sürükle-bırak desteklenir)",
+        "btn_open": "📂 .mcpack Aç",
+        "btn_folder": "📁 Klasör Aç",
+        "btn_new": "🛠️ Yeni Paket",
+        "btn_export": "📦 .mcpack Dışa Aktar",
+        "btn_install": "⬇️ MCPE'ye Yükle",
+        "btn_add": "➕ Skin Ekle (.png)",
+        "btn_rename_pack": "📝 Paketi Adlandır",
+        "btn_rename_skin": "✏️ İsim Değiştir",
+        "no_skins": "Bu pakette hiç skin yok.\nYukarıdan 'Skin Ekle' ile başlayın! ☝️",
+        "model_slim": "Slim",
+        "model_classic": "Classic",
+        "model_unknown": "?",
+        "no_image": "[Görsel yok]",
+        "export_warning": "Dışa aktarılacak bir paket bulunamadı.",
+        "export_success": "Başarılı! 🎉",
+        "export_success_msg": ".mcpack dosyası kaydedildi:\n{}",
+        "export_error": "Hata",
+        "export_error_msg": ".mcpack oluşturulurken hata:\n{}",
+        "new_pack_created": "Harika!",
+        "new_pack_msg": "Tertemiz bir paket oluşturuldu! Skin eklemeye başlayın. 🚀",
+        "warning": "Uyarı",
+        "open_pack_first": "Önce bir paket aç veya yeni paket oluştur!",
+        "skin_name_prompt": "Bu skin için bir isim girin:",
+        "model_question": "İnce Kollu (Alex) mı?\nEvet = Slim, Hayır = Classic",
+        "rename_pack_title": "Paketi Yeniden Adlandır",
+        "rename_pack_msg": "Yeni paket adını girin (UUID'ler yenilenecek):",
+        "rename_success": "Başarılı",
+        "rename_success_msg": "Paket adı '{}' olarak değiştirildi. ✅",
+        "rename_skin_title": "Skin Adını Değiştir",
+        "rename_skin_msg": "Yeni ad:",
+        "install_warning": "Yüklenecek bir şey yok.",
+        "com_mojang_not_found": "com.mojang bulunamadı",
+        "com_mojang_msg": "Lütfen elle seç.",
+        "install_success": "Yüklendi ✅",
+        "install_success_msg": "Paket başarıyla eklendi!\nHedef: {}\nOyunda etkinleştirmeyi unutma! 🎮",
+        "install_error": "Kopyalama hatası:\n{}",
+        "load_error": "Paket açılırken hata:\n{}",
+        "load_error_title": "Hata",
+        "no_skin_data": "Bu pakette hiç skin bulunamadı.\nYeni skin eklemek için yukarıdaki 'Skin Ekle' butonunu kullan! ☝️",
+        "pack_label_format": "📁 {}  |  {} Skin",
+        "github_text": "GitHub: SALIHMIRZA3655",
+    },
+    "en": {
+        "title": "🎨 MCPE Skin Pack Editor / Installer",
+        "no_pack": "📁 No pack loaded",
+        "drag_hint": " (drag & drop supported)",
+        "btn_open": "📂 Open .mcpack",
+        "btn_folder": "📁 Open Folder",
+        "btn_new": "🛠️ New Pack",
+        "btn_export": "📦 Export .mcpack",
+        "btn_install": "⬇️ Install to MCPE",
+        "btn_add": "➕ Add Skin (.png)",
+        "btn_rename_pack": "📝 Rename Pack",
+        "btn_rename_skin": "✏️ Rename Skin",
+        "no_skins": "No skins in this pack.\nStart by clicking 'Add Skin' above! ☝️",
+        "model_slim": "Slim",
+        "model_classic": "Classic",
+        "model_unknown": "?",
+        "no_image": "[No image]",
+        "export_warning": "No pack to export.",
+        "export_success": "Success! 🎉",
+        "export_success_msg": ".mcpack saved at:\n{}",
+        "export_error": "Error",
+        "export_error_msg": "Error creating .mcpack:\n{}",
+        "new_pack_created": "Awesome!",
+        "new_pack_msg": "A brand new pack created! Start adding skins. 🚀",
+        "warning": "Warning",
+        "open_pack_first": "Open a pack or create a new one first!",
+        "skin_name_prompt": "Enter a name for this skin:",
+        "model_question": "Is this a Slim (Alex) model?\nYes = Slim, No = Classic",
+        "rename_pack_title": "Rename Pack",
+        "rename_pack_msg": "Enter new pack name (UUIDs will be refreshed):",
+        "rename_success": "Success",
+        "rename_success_msg": "Pack renamed to '{}'. ✅",
+        "rename_skin_title": "Rename Skin",
+        "rename_skin_msg": "New name:",
+        "install_warning": "Nothing to install.",
+        "com_mojang_not_found": "com.mojang not found",
+        "com_mojang_msg": "Please select manually.",
+        "install_success": "Installed ✅",
+        "install_success_msg": "Pack added successfully!\nTarget: {}\nDon't forget to activate it in game! 🎮",
+        "install_error": "Copy error:\n{}",
+        "load_error": "Error opening pack:\n{}",
+        "load_error_title": "Error",
+        "no_skin_data": "No skins found in this pack.\nUse 'Add Skin' to start! ☝️",
+        "pack_label_format": "📁 {}  |  {} Skin(s)",
+        "github_text": "GitHub: SALIHMIRZA3655",
+    }
+}
+
+class SkinPackApp:
+    def __init__(self, root):
+        self.root = root
+        self.current_lang = "tr"
+        try:
+            sys_lang = locale.getdefaultlocale()[0]
+            if sys_lang and sys_lang.startswith("en"):
+                self.current_lang = "en"
+        except:
+            pass
+
+        self.lang = LANGUAGES[self.current_lang]
+        self.root.title(self.lang["title"])
+        self.root.geometry("920x750")
+        self.root.configure(bg="#f0f2f5")
+
+        self.logo_image = None
+        logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+        if os.path.exists(logo_path) and PIL_AVAILABLE:
+            try:
+                img = Image.open(logo_path)
+                img = img.resize((40, 40), Image.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+            except:
+                self.logo_image = None
+
+        self.temp_dir = None
+        self.loaded_pack_path = None
+        self.skins_data = []
+        self.thumbnails = []
+        self.manifest = {}
+
+        self.build_ui()
+
+        if DND_AVAILABLE:
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind("<<Drop>>", self.on_drop)
+
+        menubar = tk.Menu(self.root)
+        lang_menu = tk.Menu(menubar, tearoff=0)
+        lang_menu.add_command(label="Türkçe", command=lambda: self.change_lang("tr"))
+        lang_menu.add_command(label="English", command=lambda: self.change_lang("en"))
+        menubar.add_cascade(label="🌐 Language", menu=lang_menu)
+        self.root.config(menu=menubar)
+
+    def change_lang(self, lang_code):
+        if lang_code in LANGUAGES:
+            self.current_lang = lang_code
+            self.lang = LANGUAGES[lang_code]
+            self.root.title(self.lang["title"])
+            self.build_ui()
+            self._update_pack_label()
+            self.render_skins()
+
+    def build_ui(self):
+        for widget in self.root.winfo_children():
+            if isinstance(widget, tk.Frame) or isinstance(widget, tk.Canvas):
+                widget.destroy()
+
+        colors = {
+            "bg": "#f0f2f5",
+            "frame": "#ffffff",
+            "btn_open": "#0078d7",
+            "btn_folder": "#28a745",
+            "btn_new": "#ffc107",
+            "btn_export": "#fd7e14",
+            "btn_install": "#dc3545",
+            "btn_add": "#17a2b8",
+            "btn_rename": "#6f42c1",
+            "text_light": "#ffffff",
+            "text_dark": "#343a40",
+        }
+
+        top_frame_1 = tk.Frame(self.root, bg=colors["frame"], padx=10, pady=8)
+        top_frame_1.pack(fill="x", pady=(5, 0))
+
+        if self.logo_image:
+            logo_label = tk.Label(top_frame_1, image=self.logo_image, bg=colors["frame"])
+            logo_label.pack(side="left", padx=(0, 10))
+        else:
+            tk.Label(top_frame_1, text="⚡", font=("Segoe UI", 28), bg=colors["frame"], fg="#ff9800").pack(side="left", padx=(0, 10))
+
+        def make_btn(parent, text_key, cmd, bg_color, fg_color=colors["text_light"]):
+            btn = tk.Button(
+                parent, text=self.lang[text_key], command=cmd,
+                font=("Segoe UI", 10, "bold"),
+                bg=bg_color, fg=fg_color,
+                relief="flat", padx=8, pady=5,
+                activebackground=self._darken(bg_color, 0.8),
+                activeforeground=fg_color,
+                cursor="hand2"
+            )
+            btn.pack(side="left", padx=4)
+            return btn
+
+        make_btn(top_frame_1, "btn_open", self.open_mcpack, colors["btn_open"])
+        make_btn(top_frame_1, "btn_folder", self.open_folder, colors["btn_folder"])
+        make_btn(top_frame_1, "btn_new", self.create_new_pack, colors["btn_new"], colors["text_dark"])
+        make_btn(top_frame_1, "btn_export", self.export_to_desktop, colors["btn_export"])
+        make_btn(top_frame_1, "btn_install", self.install_to_mcpe, colors["btn_install"])
+
+        top_frame_2 = tk.Frame(self.root, bg=colors["frame"], padx=10, pady=6)
+        top_frame_2.pack(fill="x", pady=(2, 5))
+
+        make_btn(top_frame_2, "btn_add", self.add_skin, colors["btn_add"])
+        make_btn(top_frame_2, "btn_rename_pack", self.rename_pack, colors["btn_rename"])
+
+        github_label = tk.Label(
+            top_frame_2,
+            text=self.lang["github_text"],
+            font=("Segoe UI", 8, "underline"),
+            fg="#0078d7",
+            bg=colors["frame"],
+            cursor="hand2"
+        )
+        github_label.pack(side="left", padx=15)
+        github_label.bind("<Button-1>", lambda e: webbrowser.open("https://github.com/SALIHMIRZA3655"))
+
+        hint = self.lang["drag_hint"] if DND_AVAILABLE else ""
+        self.pack_label = tk.Label(
+            top_frame_2,
+            text=self.lang["no_pack"] + hint,
+            font=("Segoe UI", 10),
+            fg=colors["text_dark"],
+            bg=colors["frame"]
+        )
+        self.pack_label.pack(side="right", padx=10)
+
+        container = tk.Frame(self.root, bg=colors["bg"])
+        container.pack(fill="both", expand=True, padx=8, pady=8)
+
+        self.canvas = tk.Canvas(container, bg=colors["bg"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
+        self.scroll_frame = tk.Frame(self.canvas, bg=colors["bg"])
+
+        self.scroll_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+        self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+        self._update_pack_label()
+        self.render_skins()
+
+    def _darken(self, hex_color, factor=0.8):
+        hex_color = hex_color.lstrip('#')
+        if len(hex_color) == 3:
+            hex_color = ''.join(c*2 for c in hex_color)
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        r = int(r * factor)
+        g = int(g * factor)
+        b = int(b * factor)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def export_to_desktop(self):
+        if not self.temp_dir or not self.skins_data:
+            messagebox.showwarning(self.lang["warning"], self.lang["export_warning"])
+            return
+
+        desktop = os.path.expanduser("~/Desktop")
+        if not os.path.exists(desktop):
+            desktop = os.path.expanduser("~")
+
+        pack_name = self._safe_folder_name(self._get_pack_display_name())
+        default_filename = f"{pack_name}.mcpack"
+
+        save_path = filedialog.asksaveasfilename(
+            title="Save .mcpack File",
+            initialdir=desktop,
+            initialfile=default_filename,
+            filetypes=[("Minecraft Skin Pack", "*.mcpack")]
+        )
+        if not save_path:
+            return
+        if not save_path.lower().endswith(".mcpack"):
+            save_path += ".mcpack"
+
+        try:
+            with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                for root_dir, _, files in os.walk(self.temp_dir):
+                    for file in files:
+                        full_path = os.path.join(root_dir, file)
+                        rel_path = os.path.relpath(full_path, self.temp_dir)
+                        zip_file.write(full_path, rel_path)
+            messagebox.showinfo(self.lang["export_success"], self.lang["export_success_msg"].format(save_path))
+        except Exception as e:
+            messagebox.showerror(self.lang["export_error"], self.lang["export_error_msg"].format(e))
+
+    def create_new_pack(self):
+        if self.temp_dir and os.path.isdir(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        self.temp_dir = tempfile.mkdtemp(prefix="mcpack_new_")
+        self.skins_data = []
+        self.loaded_pack_path = "NewPack"
+        self.generate_new_manifest("My New Skin Pack")
+        self.save_skins_json()
+        self._update_pack_label()
+        self.render_skins()
+        messagebox.showinfo(self.lang["new_pack_created"], self.lang["new_pack_msg"])
+
+    def add_skin(self):
+        if not self.temp_dir:
+            messagebox.showwarning(self.lang["warning"], self.lang["open_pack_first"])
+            return
+        png_path = filedialog.askopenfilename(title="Select Skin PNG", filetypes=[("PNG Image", "*.png")])
+        if not png_path:
+            return
+        skin_name = simpledialog.askstring(self.lang["skin_name_prompt"], self.lang["skin_name_prompt"])
+        if not skin_name:
+            return
+        is_slim = messagebox.askyesno(self.lang["model_question"], self.lang["model_question"])
+        geometry = "geometry.humanoid.customSlim" if is_slim else "geometry.humanoid.custom"
+
+        safe_name = "".join(c for c in skin_name if c.isalnum() or c in " _-").strip().replace(" ", "_")
+        if not safe_name:
+            safe_name = "skin"
+        filename = f"{safe_name}_{uuid.uuid4().hex[:4]}.png"
+        target_path = os.path.join(self.temp_dir, filename)
+        shutil.copy2(png_path, target_path)
+
+        new_skin = {
+            "geometry": geometry,
+            "name": skin_name,
+            "localization_name": skin_name,
+            "texture": filename,
+            "type": "free"
+        }
+        self.skins_data.append(new_skin)
+        self.save_skins_json()
+        self.render_skins()
+        self._update_pack_label()
+
+    def rename_pack(self):
+        if not self.temp_dir:
+            messagebox.showwarning(self.lang["warning"], "Please open a pack first!")
+            return
+        current_name = self._get_pack_display_name()
+        new_name = simpledialog.askstring(self.lang["rename_pack_title"], self.lang["rename_pack_msg"], initialvalue=current_name)
+        if new_name and new_name != current_name:
+            self.generate_new_manifest(new_name)
+            self.save_skins_json()
+            self._update_pack_label()
+            messagebox.showinfo(self.lang["rename_success"], self.lang["rename_success_msg"].format(new_name))
+
+    def rename_skin(self, idx):
+        skin = self.skins_data[idx]
+        old_name = skin.get("localization_name") or skin.get("name") or f"skin_{idx}"
+        new_name = simpledialog.askstring(self.lang["rename_skin_title"], self.lang["rename_skin_msg"], initialvalue=old_name)
+        if new_name and new_name != old_name:
+            skin["localization_name"] = new_name
+            if "name" in skin:
+                skin["name"] = new_name
+            self.save_skins_json()
+            self.render_skins()
+
+    def generate_new_manifest(self, pack_name):
+        manifest_path = os.path.join(self.temp_dir, "manifest.json")
+        uuid1 = str(uuid.uuid4())
+        uuid2 = str(uuid.uuid4())
+        self.manifest = {
+            "format_version": 1,
+            "header": {
+                "name": pack_name,
+                "uuid": uuid1,
+                "version": [1, 0, 0]
+            },
+            "modules": [
+                {
+                    "type": "skin_pack",
+                    "uuid": uuid2,
+                    "version": [1, 0, 0]
+                }
+            ]
+        }
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(self.manifest, f, indent=4, ensure_ascii=False)
+
+    def save_skins_json(self):
+        if not self.temp_dir:
+            return
+        skins_json_path = os.path.join(self.temp_dir, "skins.json")
+        pack_name = self._get_pack_display_name()
+        data = {
+            "skins": self.skins_data,
+            "serialize_name": pack_name,
+            "localization_name": pack_name
+        }
+        with open(skins_json_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+    def on_drop(self, event):
+        raw = event.data.strip()
+        if raw.startswith("{"):
+            path = raw.split("}")[0].lstrip("{")
+        else:
+            path = raw.split()[0]
+        if path:
+            self.try_load(path)
+
+    def open_mcpack(self):
+        path = filedialog.askopenfilename(
+            title="Select .mcpack (or .rar)",
+            filetypes=[("MCPE Skin Pack / RAR", "*.mcpack *.rar"), ("MCPE Skin Pack", "*.mcpack"), ("RAR Archive", "*.rar")]
+        )
+        if path:
+            self.try_load(path)
+
+    def open_folder(self):
+        path = filedialog.askdirectory(title="Select folder containing skins.json")
+        if path:
+            self.try_load(path)
+
+    def try_load(self, path):
+        try:
+            if os.path.isdir(path):
+                self.load_pack_from_folder(path)
+            else:
+                self.load_pack(path)
+        except Exception as e:
+            messagebox.showerror(self.lang["load_error_title"], self.lang["load_error"].format(e))
+
+    def load_pack_from_folder(self, folder_path):
+        source_dir = None
+        if os.path.isfile(os.path.join(folder_path, "skins.json")):
+            source_dir = folder_path
+        else:
+            for entry in os.listdir(folder_path):
+                sub = os.path.join(folder_path, entry)
+                if os.path.isdir(sub) and os.path.isfile(os.path.join(sub, "skins.json")):
+                    source_dir = sub
+                    break
+        if not source_dir:
+            raise FileNotFoundError("skins.json not found in selected folder.")
+        if self.temp_dir and os.path.isdir(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        self.temp_dir = tempfile.mkdtemp(prefix="mcpack_")
+        for item in os.listdir(source_dir):
+            src_item = os.path.join(source_dir, item)
+            dst_item = os.path.join(self.temp_dir, item)
+            if os.path.isdir(src_item):
+                shutil.copytree(src_item, dst_item)
+            else:
+                shutil.copy2(src_item, dst_item)
+        self.loaded_pack_path = folder_path
+        self._load_skins_json_and_manifest(display_path=folder_path)
+
+    def load_pack(self, path):
+        lower = path.lower()
+        if not (lower.endswith(".mcpack") or lower.endswith(".rar")):
+            raise ValueError("Unsupported file type.")
+        if self.temp_dir and os.path.isdir(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        self.temp_dir = tempfile.mkdtemp(prefix="mcpack_")
+        if lower.endswith(".rar"):
+            self._extract_from_rar(path)
+        else:
+            if not zipfile.is_zipfile(path):
+                raise ValueError("File appears corrupted.")
+            with zipfile.ZipFile(path, "r") as z:
+                z.extractall(self.temp_dir)
+        if not lower.endswith(".rar"):
+            self.loaded_pack_path = path
+        self._load_skins_json_and_manifest(display_path=path)
+
+    def _load_skins_json_and_manifest(self, display_path):
+        skins_json_path = os.path.join(self.temp_dir, "skins.json")
+        manifest_path = os.path.join(self.temp_dir, "manifest.json")
+        self.skins_data = []
+        if os.path.isfile(skins_json_path):
+            with open(skins_json_path, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+                self.skins_data = data.get("skins", [])
+        self.manifest = {}
+        if os.path.isfile(manifest_path):
+            try:
+                with open(manifest_path, "r", encoding="utf-8-sig") as f:
+                    self.manifest = json.load(f)
+            except Exception:
+                pass
+        self._update_pack_label()
+        self.render_skins()
+
+    def _extract_from_rar(self, rar_path):
+        if not RAR_AVAILABLE:
+            raise RuntimeError("rarfile library required for RAR files.")
+        rar_extract_dir = tempfile.mkdtemp(prefix="rar_extract_")
+        try:
+            with rarfile.RarFile(rar_path) as rf:
+                rf.extractall(rar_extract_dir)
+        except rarfile.RarCannotExec:
+            chosen = filedialog.askopenfilename(title="Locate unrar.exe", filetypes=[("UnRAR", "*.exe"), ("All files", "*.*")])
+            if not chosen:
+                raise RuntimeError("unrar.exe not found.")
+            rarfile.UNRAR_TOOL = chosen
+            with rarfile.RarFile(rar_path) as rf:
+                rf.extractall(rar_extract_dir)
+        mcpack_path = None
+        for root_dir, _, files in os.walk(rar_extract_dir):
+            for fname in files:
+                if fname.lower().endswith(".mcpack"):
+                    mcpack_path = os.path.join(root_dir, fname)
+                    break
+            if mcpack_path:
+                break
+        if not mcpack_path:
+            raise FileNotFoundError("No .mcpack found inside RAR.")
+        with zipfile.ZipFile(mcpack_path, "r") as z:
+            z.extractall(self.temp_dir)
+        self.loaded_pack_path = mcpack_path
+        shutil.rmtree(rar_extract_dir, ignore_errors=True)
+
+    def _get_pack_display_name(self):
+        try:
+            name = self.manifest.get("header", {}).get("name")
+            if name:
+                return name
+        except Exception:
+            pass
+        return "Unnamed Pack"
+
+    def _update_pack_label(self):
+        pack_name = self._get_pack_display_name()
+        self.pack_label.config(
+            text=self.lang["pack_label_format"].format(pack_name, len(self.skins_data)),
+            fg="#343a40",
+            font=("Segoe UI", 10, "bold")
+        )
+
+    def render_skins(self):
+        for widget in self.scroll_frame.winfo_children():
+            widget.destroy()
+        self.thumbnails.clear()
+
+        if not self.skins_data:
+            tk.Label(
+                self.scroll_frame,
+                text=self.lang["no_skins"],
+                font=("Segoe UI", 12),
+                fg="#6c757d",
+                bg="#f0f2f5"
+            ).pack(pady=50)
+            return
+
+        cols = 4
+        for idx, skin in enumerate(self.skins_data):
+            texture_rel = skin.get("texture")
+            display_name = skin.get("localization_name") or skin.get("name") or f"skin_{idx}"
+            geometry = skin.get("geometry", "")
+
+            frame = tk.Frame(
+                self.scroll_frame,
+                bg="#ffffff",
+                relief="raised",
+                bd=2,
+                padx=8,
+                pady=8
+            )
+            frame.grid(row=idx // cols, column=idx % cols, padx=12, pady=12, sticky="n")
+
+            texture_path = os.path.join(self.temp_dir, texture_rel) if texture_rel else None
+            thumb = self.make_thumbnail(texture_path)
+            if thumb is not None:
+                self.thumbnails.append(thumb)
+                tk.Label(frame, image=thumb, bg="#ffffff").pack()
+            else:
+                tk.Label(frame, text=self.lang["no_image"], width=16, height=6, bg="#eee").pack()
+
+            tk.Label(frame, text=display_name, font=("Segoe UI", 9, "bold"), bg="#ffffff", wraplength=130).pack()
+            model_type = self.lang["model_slim"] if "slim" in geometry.lower() else (self.lang["model_classic"] if geometry else self.lang["model_unknown"])
+            tk.Label(frame, text=f"Model: {model_type}", font=("Segoe UI", 8), fg="gray", bg="#ffffff").pack()
+
+            edit_btn = tk.Button(
+                frame,
+                text=self.lang["btn_rename_skin"],
+                font=("Segoe UI", 8, "bold"),
+                bg="#e9ecef",
+                fg="#495057",
+                relief="flat",
+                padx=4,
+                pady=2,
+                activebackground="#dee2e6",
+                cursor="hand2",
+                command=lambda i=idx: self.rename_skin(i)
+            )
+            edit_btn.pack(pady=3)
+
+    def make_thumbnail(self, texture_path, max_size=110):
+        if not texture_path or not os.path.isfile(texture_path):
+            return None
+        try:
+            if PIL_AVAILABLE:
+                img = Image.open(texture_path).convert("RGBA")
+                img.thumbnail((max_size, max_size), Image.NEAREST)
+                return ImageTk.PhotoImage(img)
+            else:
+                img = tk.PhotoImage(file=texture_path)
+                if img.width() > max_size:
+                    factor = max(1, img.width() // max_size)
+                    img = img.subsample(factor, factor)
+                return img
+        except Exception:
+            return None
+
+    def find_com_mojang_dir(self):
+        for raw_path in POSSIBLE_COM_MOJANG_PATHS:
+            expanded = os.path.expandvars(raw_path)
+            if os.path.isdir(expanded):
+                return expanded
+        return None
+
+    def install_to_mcpe(self):
+        if not self.temp_dir or not self.skins_data:
+            messagebox.showwarning(self.lang["warning"], self.lang["install_warning"])
+            return
+        com_mojang = self.find_com_mojang_dir()
+        if not com_mojang:
+            messagebox.showinfo(self.lang["com_mojang_not_found"], self.lang["com_mojang_msg"])
+            chosen = filedialog.askdirectory(title="Select com.mojang folder")
+            if not chosen:
+                return
+            com_mojang = chosen
+        resource_packs_dir = os.path.join(com_mojang, "resource_packs")
+        os.makedirs(resource_packs_dir, exist_ok=True)
+        pack_folder_name = self._safe_folder_name(self._get_pack_display_name())
+        target_path = self._unique_target_path(resource_packs_dir, pack_folder_name)
+        try:
+            shutil.copytree(self.temp_dir, target_path)
+        except Exception as e:
+            messagebox.showerror(self.lang["export_error"], self.lang["install_error"].format(e))
+            return
+        messagebox.showinfo(self.lang["install_success"], self.lang["install_success_msg"].format(target_path))
+
+    def _safe_folder_name(self, name):
+        safe = "".join(c for c in name if c.isalnum() or c in " _-").strip()
+        return safe or "SkinPack"
+
+    def _unique_target_path(self, base_dir, folder_name):
+        candidate = os.path.join(base_dir, folder_name)
+        if not os.path.exists(candidate):
+            return candidate
+        suffix = uuid.uuid4().hex[:6]
+        return os.path.join(base_dir, f"{folder_name}_{suffix}")
+
+    def on_close(self):
+        if self.temp_dir and os.path.isdir(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        self.root.destroy()
+
+
+def main():
+    root = TkinterDnD.Tk() if DND_AVAILABLE else tk.Tk()
+    style = ttk.Style()
+    style.theme_use("clam")
+    app = SkinPackApp(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_close)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
